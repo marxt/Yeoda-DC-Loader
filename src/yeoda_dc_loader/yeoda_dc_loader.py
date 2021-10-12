@@ -312,7 +312,7 @@ class YeodaDCLoader:
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['band'] = self.bandLE.text().strip()
-            filter_dictionary['extra'] = self.extraLE.text().strip()
+            filter_dictionary['extra_field'] = self.extraLE.text().strip()
         elif self.naming_scheme == 'ACube':
             filter_dictionary['tile_name'] = self.tileLE.text().strip()
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
@@ -392,6 +392,12 @@ class YeodaDCLoader:
                     if dt2 is None:
                         dt2 = self.convertTime(file_name[dt_key1])
                     allow = allow and (filter_dictionary['end_time'] >= dt2)
+            elif ',' in value: #multiple values, extremely slow but possible
+                values = value.split(',')
+                allow_temp = False
+                for v in values:
+                    allow_temp = allow_temp or v.strip() == file_name[key]
+                allow = allow and allow_temp
             elif value != '': #none empty string comparison
                 allow = allow and (value == file_name[key])
             else: #empty string comparison
