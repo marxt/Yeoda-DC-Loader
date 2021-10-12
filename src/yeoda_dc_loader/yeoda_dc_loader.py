@@ -410,6 +410,11 @@ class YeodaDCLoader:
             rlayer = QgsRasterLayer(path, layer_title)
             if not rlayer.isValid():
                 print("Layer %s failed to load!" % (layer_title))
+              
+            qml_path = str(self.qmlFW.filePath())
+            if qml_path != '':
+                rlayer.loadNamedStyle(qml_path)
+                rlayer.triggerRepaint()
 
             QgsProject.instance().addMapLayer(rlayer)
             start_time_str = filename[dt_key1]
@@ -439,9 +444,5 @@ class YeodaDCLoader:
             rlayer.temporalProperties().setFixedTemporalRange(time_range)
             rlayer.temporalProperties().setIsActive(True)
 
-            qml_path = str(self.qmlFW.filePath())
-            if qml_path != '':
-                rlayer.loadNamedStyle(qml_path)
-                rlayer.triggerRepaint()
-                #working but legend on table of contents not updated!!!, TODO
+            
 
