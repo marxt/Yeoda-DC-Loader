@@ -343,18 +343,22 @@ class YeodaDCLoader:
         return filter_dictionary
 
     def convertTime(self, time_string):
-        if self.naming_scheme == 'Yeoda' or self.naming_scheme == 'EODR':
+        #simplified time conversion, based on asssumptions on length, should be a setting later TODO
+        leng = len(time_string)
+        if leng == 15:
             qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
                             int(time_string[9:11]), int(time_string[11:13]), int(time_string[13:15]),
                             Qt.LocalTime)
-        elif self.naming_scheme == 'BMon':
+        elif leng == 14:
             qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
                               int(time_string[8:10]), int(time_string[10:12]), int(time_string[12:14]),
                               Qt.LocalTime)
-        else:
+        elif leng == 8:
             qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
                             0, 0, 0,
                             Qt.LocalTime)
+        else:
+            qtime = None
         return qtime
 
 
@@ -363,7 +367,7 @@ class YeodaDCLoader:
 
         if self.naming_scheme == "Yeoda":
             dt_key1 = 'datetime_1'
-            dt_key2 = 'datetime_1' #sample data doesnt have datatime_2
+            dt_key2 = 'datetime_2'
         elif self.naming_scheme == "EODR":
             dt_key1 = 'dt_1'
             dt_key2 = 'dt_2'
@@ -376,20 +380,23 @@ class YeodaDCLoader:
 
         allow = True
         for (key, value) in filter_dictionary.items():
-            if value == '':
-                allow = allow and True
-            elif key == 'start_time':
+
+            if key == 'start_time':
                 if self.startCheckB.isChecked():
-                    dt1 = file_name[dt_key1]
-                    dt1 = self.convertTime(dt1)
+                    dt1 = self.convertTime(file_name[dt_key1])
                     allow = allow and (filter_dictionary['start_time'] <= dt1)
+                    #add check if dt1 is None, catch exception error dialog TODO
             elif key == 'end_time':
                 if self.endCheckB.isChecked():
-                    dt2 = file_name[dt_key2]
-                    dt2 = self.convertTime(dt2)
+                    dt2 = self.convertTime(file_name[dt_key2])
+                    if dt2 is None:
+                        dt2 = self.convertTime(file_name[dt_key1])
                     allow = allow and (filter_dictionary['end_time'] >= dt2)
-            else:
+            elif value != '': #none empty string comparison
                 allow = allow and (value == file_name[key])
+            else: #empty string comparison
+                allow = allow and True
+
         return allow, dt_key1, dt_key2
 
     def loadRLayer(self, path):
@@ -411,12 +418,13 @@ class YeodaDCLoader:
             if not rlayer.isValid():
                 print("Layer %s failed to load!" % (layer_title))
               
-            qml_path = str(self.qmlFW.filePath())
+            qml_path = str(self.qmlFW.filePath()) #styling should be applied first since, some styles apply temp prop as well
             if qml_path != '':
                 rlayer.loadNamedStyle(qml_path)
                 rlayer.triggerRepaint()
 
-            QgsProject.instance().addMapLayer(rlayer)
+            QgsProject.instance().addMapLayer(rlayer) #adding layer
+
             start_time_str = filename[dt_key1]
             end_time_str = filename[dt_key2]
 
@@ -435,10 +443,10 @@ class YeodaDCLoader:
                     end_time = start_time.addMonths(int(self.timeOverrideSB.value()))
 
             elif end_time_str != '':
-                end_time = start_time.addDays(1)
-
-            else:
                 end_time = self.convertTime(end_time_str)
+
+            else: #no end time assume one day
+                end_time = start_time.addDays(1)
 
             time_range = QgsDateTimeRange(start_time, end_time)
             rlayer.temporalProperties().setFixedTemporalRange(time_range)
