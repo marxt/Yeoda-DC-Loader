@@ -31,7 +31,6 @@ from .resources import *
 # Import the code for the dialog
 from .yeoda_dc_loader_dialog import YeodaDCLoaderDialog
 import os.path
-import pip
 import sys
 
 from qgis.core import QgsRasterLayer, QgsProject, QgsRasterLayerTemporalProperties, QgsDateTimeRange
@@ -44,18 +43,15 @@ try:
         sys.path.append(source_packages_dir)
 
     from geopathfinder.folder_naming import build_smarttree
-    from equi7grid.equi7grid import Equi7Grid
-    #from yeoda.datacube import EODataCube
+
 except:
-    #pip.main(['install', 'requests==0.0.7','--target=%s' % self.source_packages_dir, 'geopathfinder'])
-    #pip.main(['install', 'requests==0.0.10', '--target=%s' % self.source_packages_dir, 'Equi7Grid'])
-    pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
+    import pip
+    pip.main(['install', '--target=%s' % source_packages_dir, 'geopathfinder'])
+    #pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
     if source_packages_dir not in sys.path:
         sys.path.append(source_packages_dir)
 
     from geopathfinder.folder_naming import build_smarttree
-    from equi7grid.equi7grid import Equi7Grid
-    #from yeoda.datacube import EODataCube
 
 class YeodaDCLoader:
     """QGIS Plugin Implementation."""
@@ -342,75 +338,51 @@ class YeodaDCLoader:
             filter_dictionary['file_num'] = self.extraLE.text().strip()
         return filter_dictionary
 
-    def convertTime(self, time_string):
-        #simplified time conversion, based on asssumptions on length, should be a setting later TODO
-        leng = len(time_string)
-        if leng == 15:
-            qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
-                            int(time_string[9:11]), int(time_string[11:13]), int(time_string[13:15]),
-                            Qt.LocalTime)
-        elif leng == 14:
-            qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
-                              int(time_string[8:10]), int(time_string[10:12]), int(time_string[12:14]),
-                              Qt.LocalTime)
-        elif leng == 8:
-            qtime = QDateTime(int(time_string[:4]), int(time_string[4:6]), int(time_string[6:8]),
-                            0, 0, 0,
-                            Qt.LocalTime)
-        else:
-            qtime = None
-        return qtime
-
-
-
     def filters(self, file_name, filter_dictionary):
 
-        if self.naming_scheme == "Yeoda":
-            dt_key1 = 'datetime_1'
-            dt_key2 = 'datetime_2'
-        elif self.naming_scheme == "EODR":
-            dt_key1 = 'dt_1'
-            dt_key2 = 'dt_2'
-        elif self.naming_scheme == "BMon":
-            dt_key1 = 'timestamp'
-            dt_key2 = 'timestamp'
-        else:
-            dt_key1 = 'dtime_1'
-            dt_key2 = 'dtime_2'
-
         allow = True
+        dt1 = QDateTime.fromString(str(file_name.stime), 'yyyy-MM-dd hh:mm:ss')
+
+        if file_name.etime is None:
+            dt2 = dt1
+        else:
+            dt2 = QDateTime.fromString(str(file_name.etime), 'yyyy-MM-dd hh:mm:ss')
+
         for (key, value) in filter_dictionary.items():
 
             if key == 'start_time':
                 if self.startCheckB.isChecked():
-                    dt1 = self.convertTime(file_name[dt_key1])
                     allow = allow and (filter_dictionary['start_time'] <= dt1)
                     #add check if dt1 is None, catch exception error dialog TODO
             elif key == 'end_time':
                 if self.endCheckB.isChecked():
-                    dt2 = self.convertTime(file_name[dt_key2])
-                    if dt2 is None:
-                        dt2 = self.convertTime(file_name[dt_key1])
                     allow = allow and (filter_dictionary['end_time'] >= dt2)
             elif ',' in value: #multiple values, extremely slow but possible
                 values = value.split(',')
                 allow_temp = False
                 for v in values:
-                    allow_temp = allow_temp or v.strip() == file_name[key]
+                    if key == 'relative_orbit':
+                        allow_temp = allow_temp or v.strip() == "%03i" % file_name[key]
+                    else:
+                        allow_temp = allow_temp or v.strip() == file_name[key]
                 allow = allow and allow_temp
             elif value != '': #none empty string comparison
-                allow = allow and (value == file_name[key])
-            else: #empty string comparison
+                if key == 'relative_orbit':
+                    allow = allow and (value == "%03i" % file_name[key])
+                else:
+                    allow = allow and (value == file_name[key])
+            elif value == '': #empty string comparison
                 allow = allow and True
 
-        return allow, dt_key1, dt_key2
+        return allow, dt1, dt2
 
     def loadRLayer(self, path):
         #add number of layers added
 
         base_filename = os.path.basename(path)
-        filename = self.SmartFileName.from_filename(base_filename)
-        allow, dt_key1, dt_key2 = self.filters(filename, self.filter_dictionary)
+        filename = self.SmartFileName.from_filename(base_filename, True)
+        allow, dt1, dt2 = self.filters(filename, self.filter_dictionary)
+
         if allow:
             layer_title = ''
 
@@ -431,30 +403,23 @@ class YeodaDCLoader:
 
             QgsProject.instance().addMapLayer(rlayer) #adding layer
 
-            start_time_str = filename[dt_key1]
-            end_time_str = filename[dt_key2]
-
             rlayer.temporalProperties().setMode(QgsRasterLayerTemporalProperties.ModeFixedTemporalRange)
-            start_time = self.convertTime(start_time_str)
 
             if self.overrideTimeCheckB.isChecked():
                 timeInt = str(self.timeOverrideCB.currentText())
                 if timeInt == 'days':
-                    end_time = start_time.addDays(int(self.timeOverrideSB.value()))
+                    dt2 = dt1.addDays(int(self.timeOverrideSB.value()))
                 elif timeInt == 'hours':
-                    end_time = start_time.addSecs(int(self.timeOverrideSB.value())*3600)
+                    dt2 = dt1.addSecs(int(self.timeOverrideSB.value())*3600)
                 elif timeInt == 'years':
-                    end_time = start_time.addYears(int(self.timeOverrideSB.value()))
+                    dt2 = dt1.addYears(int(self.timeOverrideSB.value()))
                 elif timeInt == 'months':
-                    end_time = start_time.addMonths(int(self.timeOverrideSB.value()))
+                    dt2 = dt1.addMonths(int(self.timeOverrideSB.value()))
 
-            elif end_time_str != '':
-                end_time = self.convertTime(end_time_str)
+            if dt1 == dt2:
+                dt2 = dt2.addDays(1)
 
-            else: #no end time assume one day
-                end_time = start_time.addDays(1)
-
-            time_range = QgsDateTimeRange(start_time, end_time)
+            time_range = QgsDateTimeRange(dt1, dt2)
             rlayer.temporalProperties().setFixedTemporalRange(time_range)
             rlayer.temporalProperties().setIsActive(True)
 
