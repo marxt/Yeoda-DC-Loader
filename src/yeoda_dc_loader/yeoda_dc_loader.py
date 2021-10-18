@@ -245,8 +245,8 @@ class YeodaDCLoader:
             # Do something useful here - delete the line containing pass and
             # substitute with your code.
             try:
-                root_dirpath = str(self.basepathFW.filePath())
-                folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"]
+                root_dirpath = os.path.dirname(str(self.basepathFW.filePath()))
+                folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"] #assumed
                 dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="^[^Q].*.tif")
                 filepaths = dir_tree.file_register
             except OSError:
@@ -257,10 +257,6 @@ class YeodaDCLoader:
                 msg.setWindowTitle("Warning")
                 msg.exec_()
             else:
-                fields_dictionary = {'var_name': 'SIG0', 'datetime_1': 'starttime', 'datetime_2': 'endtime', 'band': 'pol',
-                                         'extra_field': 'orbit', 'tile_name': 'tile', 'grid_name': 'grid',
-                                         'version_run_id': 'version', 'sensor_field': 'sensor'}
-
                 self.filter_dictionary = self.get_filter_dictionary()
 
                 pd = QProgressDialog("Querying files", "Cancel", 0, len(filepaths))
@@ -278,6 +274,7 @@ class YeodaDCLoader:
                         return
 
     def select_fileNaming(self):
+        """sets naming scheme variable and imports smartfile name"""
         self.naming_scheme = str(self.namingSchemeCB.currentText())
 
         if self.naming_scheme == 'Yeoda':
@@ -298,9 +295,10 @@ class YeodaDCLoader:
 
         self.listWidget.clear()
         for k in self.SmartFileName.fields_def.keys():
-            QListWidgetItem(k, self.listWidget)
+            QListWidgetItem(k, self.listWidget) #populates the list widget
 
     def get_filter_dictionary(self):
+        """creates filter dictionary based on the GUI elements and entries, fields matched based on naing scheme"""
         filter_dictionary = {}
         if self.naming_scheme == 'Yeoda':
             filter_dictionary['tile_name'] = self.tileLE.text().strip()
@@ -316,7 +314,7 @@ class YeodaDCLoader:
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['pol'] = self.bandLE.text().strip()
             filter_dictionary['direction'] = self.extraLE.text().strip()
-        elif self.naming_scheme == 'BMon':
+        elif self.naming_scheme == 'BMon': #not tested
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
@@ -329,7 +327,7 @@ class YeodaDCLoader:
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['pol'] = self.bandLE.text().strip()
             filter_dictionary['relative_orbit'] = self.extraLE.text().strip()
-        elif self.naming_scheme == 'EODR':
+        elif self.naming_scheme == 'EODR': #not tested
             filter_dictionary['counter'] = self.tileLE.text().strip()
             filter_dictionary['id'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
@@ -339,6 +337,7 @@ class YeodaDCLoader:
         return filter_dictionary
 
     def filters(self, file_name, filter_dictionary):
+        """checks the filters"""
 
         allow = True
         dt1 = QDateTime.fromString(str(file_name.stime), 'yyyy-MM-dd hh:mm:ss')
@@ -350,25 +349,23 @@ class YeodaDCLoader:
 
         for (key, value) in filter_dictionary.items():
 
-            if key == 'start_time':
-                if self.startCheckB.isChecked():
-                    allow = allow and (filter_dictionary['start_time'] <= dt1)
+            if key == 'start_time' and self.startCheckB.isChecked():
+                allow = allow and (filter_dictionary['start_time'] <= dt1)
                     #add check if dt1 is None, catch exception error dialog TODO
-            elif key == 'end_time':
-                if self.endCheckB.isChecked():
-                    allow = allow and (filter_dictionary['end_time'] >= dt2)
-            elif ',' in value: #multiple values, extremely slow but possible
+            elif key == 'end_time'and  self.endCheckB.isChecked():
+                allow = allow and (filter_dictionary['end_time'] >= dt2)
+            elif ',' in value: #multiple values, slow but works, to be replaced by prefilters
                 values = value.split(',')
                 allow_temp = False
                 for v in values:
                     if key == 'relative_orbit':
-                        allow_temp = allow_temp or v.strip() == "%03i" % file_name[key]
+                        allow_temp = allow_temp or v.strip() == "%s%03i" % (file_name['orbit_direction'], file_name[key])
                     else:
                         allow_temp = allow_temp or v.strip() == file_name[key]
                 allow = allow and allow_temp
             elif value != '': #none empty string comparison
                 if key == 'relative_orbit':
-                    allow = allow and (value == "%03i" % file_name[key])
+                    allow = allow and (value == "%s%03i" % (file_name['orbit_direction'], file_name[key]))
                 else:
                     allow = allow and (value == file_name[key])
             elif value == '': #empty string comparison
@@ -377,7 +374,7 @@ class YeodaDCLoader:
         return allow, dt1, dt2
 
     def loadRLayer(self, path):
-        #add number of layers added
+        """Loads raster layer if field filters allows, applies temproal properties and style"""
 
         base_filename = os.path.basename(path)
         filename = self.SmartFileName.from_filename(base_filename, True)
