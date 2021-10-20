@@ -23,7 +23,8 @@
 """
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QDateTime, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox, QListWidget, QLineEdit, QDateTimeEdit, QCheckBox, QListWidgetItem, QProgressDialog, QComboBox, QSpinBox
+from qgis.PyQt.QtWidgets import QAction, QMessageBox, QListWidget, QLineEdit, QDateTimeEdit, \
+    QCheckBox, QListWidgetItem, QProgressDialog, QComboBox, QSpinBox
 from qgis.gui import QgsFileWidget
 
 # Initialize Qt resources from file resources.py
@@ -34,24 +35,7 @@ import os.path
 import sys
 
 from qgis.core import QgsRasterLayer, QgsProject, QgsRasterLayerTemporalProperties, QgsDateTimeRange
-# TUW packages
-plugin_dir = os.path.dirname(__file__)
-source_packages_dir = os.path.join(plugin_dir, 'source_packages')
 
-try:
-    if source_packages_dir not in sys.path:
-        sys.path.append(source_packages_dir)
-
-    from geopathfinder.folder_naming import build_smarttree
-
-except:
-    import pip
-    pip.main(['install', '--target=%s' % source_packages_dir, 'geopathfinder'])
-    #pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
-    if source_packages_dir not in sys.path:
-        sys.path.append(source_packages_dir)
-
-    from geopathfinder.folder_naming import build_smarttree
 
 class YeodaDCLoader:
     """QGIS Plugin Implementation."""
@@ -87,8 +71,23 @@ class YeodaDCLoader:
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
+        
+        # TUW packages
+        plugin_dir = os.path.dirname(__file__)
+        source_packages_dir = os.path.join(plugin_dir, 'source_packages')
+        
+        if source_packages_dir not in sys.path:
+            sys.path.append(source_packages_dir)
 
+        try:
+            from geopathfinder.folder_naming import build_smarttree
 
+        except:
+            import pip
+            pip.main(['install', '--target=%s' % source_packages_dir, 'geopathfinder'])
+            #pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
+
+            from geopathfinder.folder_naming import build_smarttree
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -104,7 +103,6 @@ class YeodaDCLoader:
         """
         # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
         return QCoreApplication.translate('YeodaDCLoader', message)
-
 
     def add_action(
         self,
@@ -193,7 +191,6 @@ class YeodaDCLoader:
         # will be set False in run()
         self.first_start = True
 
-
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
@@ -207,7 +204,9 @@ class YeodaDCLoader:
 
         # Create the dialog with elements (after translation) and keep reference
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
-        if self.first_start == True:
+        if self.first_start:
+            from geopathfinder.folder_naming import build_smarttree
+
             self.first_start = False
             self.dlg = YeodaDCLoaderDialog()
             self.basepathFW = self.dlg.findChild(QgsFileWidget, 'basepathFW')
@@ -295,7 +294,7 @@ class YeodaDCLoader:
 
         self.listWidget.clear()
         for k in self.SmartFileName.fields_def.keys():
-            QListWidgetItem(k, self.listWidget) #populates the list widget
+            QListWidgetItem(k, self.listWidget)  # populates the list widget
 
     def get_filter_dictionary(self):
         """creates filter dictionary based on the GUI elements and entries, fields matched based on naing scheme"""
@@ -314,7 +313,7 @@ class YeodaDCLoader:
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['pol'] = self.bandLE.text().strip()
             filter_dictionary['direction'] = self.extraLE.text().strip()
-        elif self.naming_scheme == 'BMon': #not tested
+        elif self.naming_scheme == 'BMon':  # not tested
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
@@ -327,7 +326,7 @@ class YeodaDCLoader:
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['pol'] = self.bandLE.text().strip()
             filter_dictionary['relative_orbit'] = self.extraLE.text().strip()
-        elif self.naming_scheme == 'EODR': #not tested
+        elif self.naming_scheme == 'EODR':  # not tested
             filter_dictionary['counter'] = self.tileLE.text().strip()
             filter_dictionary['id'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
@@ -349,12 +348,14 @@ class YeodaDCLoader:
 
         for (key, value) in filter_dictionary.items():
 
-            if key == 'start_time' and self.startCheckB.isChecked():
-                allow = allow and (filter_dictionary['start_time'] <= dt1)
-                    #add check if dt1 is None, catch exception error dialog TODO
-            elif key == 'end_time'and  self.endCheckB.isChecked():
-                allow = allow and (filter_dictionary['end_time'] >= dt2)
-            elif ',' in value: #multiple values, slow but works, to be replaced by prefilters
+            if key == 'start_time':
+                if self.startCheckB.isChecked():
+                    allow = allow and (filter_dictionary['start_time'] <= dt1)
+                    # add check if dt1 is None, catch exception error dialog TODO
+            elif key == 'end_time':
+                if self.endCheckB.isChecked():
+                    allow = allow and (filter_dictionary['end_time'] >= dt2)
+            elif ',' in value:  # multiple values, slow but works, to be replaced by prefilters
                 values = value.split(',')
                 allow_temp = False
                 for v in values:
@@ -391,14 +392,15 @@ class YeodaDCLoader:
 
             rlayer = QgsRasterLayer(path, layer_title)
             if not rlayer.isValid():
-                print("Layer %s failed to load!" % (layer_title))
+                print("Layer %s failed to load!" % layer_title)
               
-            qml_path = str(self.qmlFW.filePath()) #styling should be applied first since, some styles apply temp prop as well
+            qml_path = str(self.qmlFW.filePath())
+            # styling should be applied first since, some styles apply temp prop as well
             if qml_path != '':
                 rlayer.loadNamedStyle(qml_path)
                 rlayer.triggerRepaint()
 
-            QgsProject.instance().addMapLayer(rlayer) #adding layer
+            QgsProject.instance().addMapLayer(rlayer)  # adding layer
 
             rlayer.temporalProperties().setMode(QgsRasterLayerTemporalProperties.ModeFixedTemporalRange)
 
@@ -419,6 +421,3 @@ class YeodaDCLoader:
             time_range = QgsDateTimeRange(dt1, dt2)
             rlayer.temporalProperties().setFixedTemporalRange(time_range)
             rlayer.temporalProperties().setIsActive(True)
-
-            
-
