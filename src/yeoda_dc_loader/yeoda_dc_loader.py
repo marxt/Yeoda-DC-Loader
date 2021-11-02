@@ -245,9 +245,20 @@ class YeodaDCLoader:
             # substitute with your code.
             try:
                 root_dirpath = os.path.dirname(str(self.basepathFW.filePath()))
+
                 folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"] #assumed
-                dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="^[^Q].*.tif")
-                filepaths = dir_tree.file_register
+                tiles = self.tileLE.text().strip().split(',')
+
+                filepaths = []
+                if len(tiles) == 0:
+                    dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="^[^Q].*.tif")
+                    filepaths = dir_tree.file_register
+                else:
+                    for tile in tiles:
+                        tile = tile.strip()
+                        dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="*"+ tile +"*.tif")
+                        filepaths += dir_tree.file_register
+
             except OSError:
                 msg = QMessageBox()
                 msg.setIcon(QMessageBox.Warning)
@@ -300,14 +311,12 @@ class YeodaDCLoader:
         """creates filter dictionary based on the GUI elements and entries, fields matched based on naing scheme"""
         filter_dictionary = {}
         if self.naming_scheme == 'Yeoda':
-            filter_dictionary['tile_name'] = self.tileLE.text().strip()
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['band'] = self.bandLE.text().strip()
             filter_dictionary['extra_field'] = self.extraLE.text().strip()
         elif self.naming_scheme == 'ACube':
-            filter_dictionary['tile_name'] = self.tileLE.text().strip()
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
@@ -320,14 +329,12 @@ class YeodaDCLoader:
             filter_dictionary['version'] = self.bandLE.text().strip()
             filter_dictionary['sres'] = self.extraLE.text().strip()
         elif self.naming_scheme == 'SGRT':
-            filter_dictionary['tile_name'] = self.tileLE.text().strip()
             filter_dictionary['var_name'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['pol'] = self.bandLE.text().strip()
             filter_dictionary['relative_orbit'] = self.extraLE.text().strip()
         elif self.naming_scheme == 'EODR':  # not tested
-            filter_dictionary['counter'] = self.tileLE.text().strip()
             filter_dictionary['id'] = self.varNameLE.text().strip()
             filter_dictionary['start_time'] = self.startDateTimeEdit.dateTime()
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
