@@ -26,6 +26,8 @@ from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QListWidget, QLineEdit, QDateTimeEdit, \
     QCheckBox, QListWidgetItem, QProgressDialog, QComboBox, QSpinBox
 from qgis.gui import QgsFileWidget
+import itertools
+from collections import OrderedDict
 
 # Initialize Qt resources from file resources.py
 from .resources import *
@@ -247,17 +249,17 @@ class YeodaDCLoader:
                 root_dirpath = os.path.dirname(str(self.basepathFW.filePath()))
 
                 folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"] #assumed
-                tiles = self.tileLE.text().strip().split(',')
 
+                self.load_filter_dictionary()
                 filepaths = []
-                if len(tiles) == 0:
-                    dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="^[^Q].*.tif")
-                    filepaths = dir_tree.file_register
-                else:
-                    for tile in tiles:
-                        tile = tile.strip()
-                        dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern="*"+ tile +"*.tif")
-                        filepaths += dir_tree.file_register
+
+                search_strings = self.generate_search_strings()
+                if len(search_strings) == 0:
+                    search_strings += ["^[^Q].*.tif"]
+
+                for search_string in search_strings:
+                    dir_tree = build_smarttree(root_dirpath, folder_hierarchy, register_file_pattern=search_string)
+                    filepaths += dir_tree.file_register
 
             except OSError:
                 msg = QMessageBox()
@@ -283,6 +285,42 @@ class YeodaDCLoader:
                         pd = None
                         return
 
+    def generate_search_strings(self):
+        """return search file name (without datetime filters)"""
+        if self.naming_scheme is None:
+            raise RuntimeError
+
+        filename_filter_dictionary = {}
+
+        for (key, value) in self.filter_dictionary.items():
+            if ',' in value:
+                values = value.split(',')
+                values = [v.strip() for v in values]
+                filename_filter_dictionary[key] = values
+            else:
+                if value == '':
+                    value = '*'
+                filename_filter_dictionary[key] = [value]
+
+        keys, values = zip(filename_filter_dictionary.items())
+        permu_file_filter_dicts = [dict(zip(keys, v)) for v in itertools.product(values)]
+
+        search_strs = []
+        for search_dict in permu_file_filter_dicts:
+            f_fields = OrderedDict()
+            for k in self.SmartFileName.fields_def.keys():
+                if k in search_dict:
+                    f_fields[k] = search_dict[k]
+                elif k == 'orbit_direction':
+                    search_dict['relative_orbit'][0]
+                elif k == 'relative_orbit':
+                    search_dict['relative_orbit'][1:]
+                else:
+                    f_fields[k] = '*'
+            search_strs += [str(self.SmartFileName(f_fields))]
+
+        return search_strs
+
     def select_fileNaming(self):
         """sets naming scheme variable and imports smartfile name"""
         self.naming_scheme = str(self.namingSchemeCB.currentText())
@@ -307,7 +345,7 @@ class YeodaDCLoader:
         for k in self.SmartFileName.fields_def.keys():
             QListWidgetItem(k, self.listWidget)  # populates the list widget
 
-    def get_filter_dictionary(self):
+    def load_filter_dictionary(self):
         """creates filter dictionary based on the GUI elements and entries, fields matched based on naing scheme"""
         filter_dictionary = {}
         if self.naming_scheme == 'Yeoda':
@@ -340,10 +378,11 @@ class YeodaDCLoader:
             filter_dictionary['end_time'] = self.endDateTimeEdit.dateTime()
             filter_dictionary['band'] = self.bandLE.text().strip()
             filter_dictionary['file_num'] = self.extraLE.text().strip()
-        return filter_dictionary
 
-    def filters(self, file_name, filter_dictionary):
-        """checks the filters"""
+        self.filter_dictionary = filter_dictionary
+
+    def time_filters(self, file_name, filter_dictionary):
+        """checks the time filters"""
 
         allow = True
         dt1 = QDateTime.fromString(str(file_name.stime), 'yyyy-MM-dd hh:mm:ss')
@@ -362,22 +401,6 @@ class YeodaDCLoader:
             elif key == 'end_time':
                 if self.endCheckB.isChecked():
                     allow = allow and (filter_dictionary['end_time'] >= dt2)
-            elif ',' in value:  # multiple values, slow but works, to be replaced by prefilters
-                values = value.split(',')
-                allow_temp = False
-                for v in values:
-                    if key == 'relative_orbit':
-                        allow_temp = allow_temp or v.strip() == "%s%03i" % (file_name['orbit_direction'], file_name[key])
-                    else:
-                        allow_temp = allow_temp or v.strip() == file_name[key]
-                allow = allow and allow_temp
-            elif value != '': #none empty string comparison
-                if key == 'relative_orbit':
-                    allow = allow and (value == "%s%03i" % (file_name['orbit_direction'], file_name[key]))
-                else:
-                    allow = allow and (value == file_name[key])
-            elif value == '': #empty string comparison
-                allow = allow and True
 
         return allow, dt1, dt2
 
@@ -386,7 +409,7 @@ class YeodaDCLoader:
 
         base_filename = os.path.basename(path)
         filename = self.SmartFileName.from_filename(base_filename, True)
-        allow, dt1, dt2 = self.filters(filename, self.filter_dictionary)
+        allow, dt1, dt2 = self.time_filters(filename, self.filter_dictionary)
 
         if allow:
             layer_title = ''
