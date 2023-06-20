@@ -73,11 +73,11 @@ class YeodaDCLoader:
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
-        
+
         # TUW packages
         plugin_dir = os.path.dirname(__file__)
         source_packages_dir = os.path.join(plugin_dir, 'source_packages')
-        
+
         if source_packages_dir not in sys.path:
             sys.path.append(source_packages_dir)
 
@@ -86,8 +86,9 @@ class YeodaDCLoader:
 
         except:
             import pip
-            pip.main(['install', '--target=%s' % source_packages_dir, 'geopathfinder'])
-            #pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
+            pip.main(['install', '--target=%s' % source_packages_dir, 'geopathfinder==0.1.1', 'numpy==1.22.3',
+                      'pandas==1.3.0'])
+            # pip.main(['install', '--target=%s' % source_packages_dir, 'yeoda'])
 
             from geopathfinder.folder_naming import build_smarttree
 
@@ -107,16 +108,16 @@ class YeodaDCLoader:
         return QCoreApplication.translate('YeodaDCLoader', message)
 
     def add_action(
-        self,
-        icon_path,
-        text,
-        callback,
-        enabled_flag=True,
-        add_to_menu=True,
-        add_to_toolbar=True,
-        status_tip=None,
-        whats_this=None,
-        parent=None):
+            self,
+            icon_path,
+            text,
+            callback,
+            enabled_flag=True,
+            add_to_menu=True,
+            add_to_toolbar=True,
+            status_tip=None,
+            whats_this=None,
+            parent=None):
         """Add a toolbar icon to the toolbar.
 
         :param icon_path: Path to the icon for this action. Can be a resource
@@ -206,9 +207,9 @@ class YeodaDCLoader:
 
         # Create the dialog with elements (after translation) and keep reference
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
-        if self.first_start:
-            from geopathfinder.folder_naming import build_smarttree
+        from geopathfinder.folder_naming import build_smarttree
 
+        if self.first_start:
             self.first_start = False
             self.dlg = YeodaDCLoaderDialog()
             self.basepathFW = self.dlg.findChild(QgsFileWidget, 'basepathFW')
@@ -219,13 +220,13 @@ class YeodaDCLoader:
 
             self.namingSchemeCB.currentTextChanged.connect(self.select_fileNaming)
 
-            #loading settings
+            # loading settings
             self.qmlFW = self.dlg.findChild(QgsFileWidget, 'qmlFW')
             self.overrideTimeCheckB = self.dlg.findChild(QCheckBox, 'overrideTimeCheckB')
             self.timeOverrideCB = self.dlg.findChild(QComboBox, 'timeOverrideCB')
             self.timeOverrideSB = self.dlg.findChild(QSpinBox, 'timeOverrideSB')
 
-            #filters
+            # filters
             self.tileLE = self.dlg.findChild(QLineEdit, 'tileLE')
             self.varNameLE = self.dlg.findChild(QLineEdit, 'varNameLE')
             self.bandLE = self.dlg.findChild(QLineEdit, 'bandLE')
@@ -248,12 +249,15 @@ class YeodaDCLoader:
             try:
                 root_dirpath = os.path.dirname(str(self.basepathFW.filePath()))
 
-                folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"] #assumed
+                folder_hierarchy = ["product", "data_version", "subgrid_name", "tile_name"]  # assumed
 
                 self.load_filter_dictionary()
                 filepaths = []
 
                 search_strings = self.generate_search_strings()
+
+                print(search_strings)
+
                 if len(search_strings) == 0:
                     search_strings += ["^[^Q].*.tif"]
 
@@ -269,7 +273,6 @@ class YeodaDCLoader:
                 msg.setWindowTitle("Warning")
                 msg.exec_()
             else:
-                self.filter_dictionary = self.get_filter_dictionary()
 
                 pd = QProgressDialog("Querying files", "Cancel", 0, len(filepaths))
                 pd.setWindowModality(Qt.WindowModal)
@@ -293,19 +296,26 @@ class YeodaDCLoader:
         filename_filter_dictionary = {}
 
         for (key, value) in self.filter_dictionary.items():
-            if ',' in value:
+            if not isinstance(value, str):
+                continue
+            elif ',' in value:
                 values = value.split(',')
                 values = [v.strip() for v in values]
                 filename_filter_dictionary[key] = values
             else:
                 if value == '':
-                    value = '*'
+                    continue
+                    # value = '*'
                 filename_filter_dictionary[key] = [value]
 
-        keys, values = zip(filename_filter_dictionary.items())
-        permu_file_filter_dicts = [dict(zip(keys, v)) for v in itertools.product(values)]
-
         search_strs = []
+
+        if len(filename_filter_dictionary) == 0:
+            return search_strs
+
+        keys, values = zip(*filename_filter_dictionary.items())
+        permu_file_filter_dicts = [dict(zip(keys, v)) for v in itertools.product(*values)]
+
         for search_dict in permu_file_filter_dicts:
             f_fields = OrderedDict()
             for k in self.SmartFileName.fields_def.keys():
@@ -315,9 +325,11 @@ class YeodaDCLoader:
                     search_dict['relative_orbit'][0]
                 elif k == 'relative_orbit':
                     search_dict['relative_orbit'][1:]
-                else:
-                    f_fields[k] = '*'
-            search_strs += [str(self.SmartFileName(f_fields))]
+                # else:
+                #    f_fields[k] = '*'
+            # search_strs += [str(self.SmartFileName(f_fields))]
+
+            search_strs += [tuple(f_fields.values())]
 
         return search_strs
 
@@ -385,12 +397,17 @@ class YeodaDCLoader:
         """checks the time filters"""
 
         allow = True
-        dt1 = QDateTime.fromString(str(file_name.stime), 'yyyy-MM-dd hh:mm:ss')
 
-        if file_name.etime is None:
-            dt2 = dt1
-        else:
-            dt2 = QDateTime.fromString(str(file_name.etime), 'yyyy-MM-dd hh:mm:ss')
+        try:
+            dt1 = QDateTime.fromString(str(file_name.stime), 'yyyy-MM-dd hh:mm:ss')
+
+            if file_name.etime is None:
+                dt2 = dt1
+            else:
+                dt2 = QDateTime.fromString(str(file_name.etime), 'yyyy-MM-dd hh:mm:ss')
+        except ValueError:
+            print('file not valid: {}'.format(str(file_name)))
+            return False, None, None
 
         for (key, value) in filter_dictionary.items():
 
@@ -405,11 +422,16 @@ class YeodaDCLoader:
         return allow, dt1, dt2
 
     def loadRLayer(self, path):
-        """Loads raster layer if field filters allows, applies temproal properties and style"""
+        """Loads raster layer if field filters allows, applies temporal properties and style"""
 
         base_filename = os.path.basename(path)
-        filename = self.SmartFileName.from_filename(base_filename, True)
-        allow, dt1, dt2 = self.time_filters(filename, self.filter_dictionary)
+        try:
+            filename = self.SmartFileName.from_filename(base_filename, True)
+            allow, dt1, dt2 = self.time_filters(filename, self.filter_dictionary)
+        except ValueError:
+            print('file name does not conform to filenaming convention: {}'.format(path))
+            allow = False
+
 
         if allow:
             layer_title = ''
@@ -423,7 +445,7 @@ class YeodaDCLoader:
             rlayer = QgsRasterLayer(path, layer_title)
             if not rlayer.isValid():
                 print("Layer %s failed to load!" % layer_title)
-              
+
             qml_path = str(self.qmlFW.filePath())
             # styling should be applied first since, some styles apply temp prop as well
             if qml_path != '':
@@ -439,7 +461,7 @@ class YeodaDCLoader:
                 if timeInt == 'days':
                     dt2 = dt1.addDays(int(self.timeOverrideSB.value()))
                 elif timeInt == 'hours':
-                    dt2 = dt1.addSecs(int(self.timeOverrideSB.value())*3600)
+                    dt2 = dt1.addSecs(int(self.timeOverrideSB.value()) * 3600)
                 elif timeInt == 'years':
                     dt2 = dt1.addYears(int(self.timeOverrideSB.value()))
                 elif timeInt == 'months':
